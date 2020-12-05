@@ -8,6 +8,7 @@ use crate::parser::ico::{get_ico_text_status, ICO};
 use crate::synchronizer::config::MySQLConfig;
 
 pub mod ico;
+use urlencoding::encode;
 
 pub struct Parser {
     url: String,
@@ -25,7 +26,7 @@ impl Parser {
     }
 
     pub async fn initialize(&mut self, config: &MySQLConfig) {
-        let database_url = format!("mysql://{}:{}@{}:{}/{}", config.user, config.password, config.host, config.port, config.database);
+        let database_url = format!("mysql://{}:{}@{}:{}/{}", config.user, encode(&config.password), config.host, config.port, config.database);
         let pool = mysql_async::Pool::new(database_url);
         self.mysql_connection = Some(pool.get_conn().await.unwrap());
     }
