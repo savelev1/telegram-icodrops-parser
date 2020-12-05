@@ -1,0 +1,12 @@
+{
+  "telegram_bot_token": "",
+  "telegram_user_ids": [],
+  "mysql": {
+    "host": "127.0.0.1",
+    "port": 3306,
+    "database": "icodrops_parser",
+    "user": "root",
+    "password": ""
+  },
+  "parse_interval_sec": 60
+}
