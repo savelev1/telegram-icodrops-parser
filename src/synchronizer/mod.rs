@@ -7,13 +7,12 @@ use std::thread;
 use std::thread::sleep;
 use std::time::Duration;
 
-use telegram_bot::*;
 use tokio::runtime::Runtime;
 
-use crate::logic::on_bot_message;
 use crate::parser::Parser;
 use crate::synchronizer::config::Config;
 use crate::tg_bot::TgBot;
+use crate::tg_bot::message::Message;
 
 pub mod config;
 
@@ -21,7 +20,6 @@ pub struct Synchronizer
 {
     pub config: Config,
     pub bot: TgBot,
-    bot_main_receiver: Option<Receiver<Message>>,
     parser_main_receiver: Option<Receiver<String>>,
     pub is_started_parser: bool,
 }
@@ -32,40 +30,30 @@ impl Synchronizer
         let file = File::open("config.json").expect("Can't open config.json");
         let reader = BufReader::new(file);
         let config: Config = serde_json::from_reader(reader).expect("Can't parse JSON");
-        let token = config.telegram_bot_token.clone();
+        let token = config.telegram_bot.token.clone();
 
         Synchronizer {
             config,
             bot: TgBot::new(&token),
-            bot_main_receiver: None,
             parser_main_receiver: None,
             is_started_parser: false,
         }
     }
 
-    pub async fn run(&mut self) -> Result<(), Error> {
-        self.run_bot().await;
+    pub async fn run(&mut self) {
+        self.bot.send_message(Message::new(self.config.telegram_bot.chat_id, "Bot restarted".to_owned()).set_disable_notification(true)).await;
+        self.start_parser();
         self.run_ticker().await;
-
-        Ok(())
-    }
-
-    async fn run_bot(&mut self) {
-        let (bot_thread_sender, bot_main_receiver) = mpsc::channel();
-        self.bot_main_receiver = Some(bot_main_receiver);
-        self.bot.run(bot_thread_sender).await;
     }
 
     async fn run_ticker(&mut self) {
-        let mut messages: Vec<Message> = Vec::new();
         loop {
-            self.tick(&mut messages).await;
+            self.tick().await;
         }
     }
 
-    async fn tick(&mut self, mut messages: &mut Vec<Message>) {
-        self.check_bot_messages(&mut messages).await;
-        self.check_parser_message(&mut messages).await;
+    async fn tick(&mut self) {
+        self.check_parser_message().await;
     }
 
     pub fn start_parser(&mut self) {
@@ -83,7 +71,10 @@ impl Synchronizer
                     let mut parser = Parser::new();
                     parser.initialize(&config.mysql).await;
                     loop {
-                        parser.parse(cloned_parser_thread_sender.clone()).await;
+                        let sender = cloned_parser_thread_sender.clone();
+                        parser.parse("https://icodrops.com/category/active-ico/", 0, &sender).await;
+                        parser.parse("https://icodrops.com/category/upcoming-ico/", 1, &sender).await;
+                        parser.parse("https://icodrops.com/category/ended-ico/", 2, &sender).await;
                         sleep(Duration::from_secs(parse_interval))
                     }
                 });
@@ -91,26 +82,11 @@ impl Synchronizer
         }
     }
 
-    async fn check_bot_messages(&mut self, messages: &mut Vec<Message>) {
-        match self.bot_main_receiver.as_ref().unwrap().recv_timeout(Duration::from_millis(50)) {
-            Ok(message) => {
-                if messages.len() == 0 {
-                    messages.push(message);
-                } else {
-                    messages[0] = message;
-                }
-
-                on_bot_message(self, &messages[0]).await;
-            }
-            Err(_) => (),
-        }
-    }
-
-    async fn check_parser_message(&mut self, messages: &mut Vec<Message>) {
+    async fn check_parser_message(&mut self) {
         if self.parser_main_receiver.is_some() {
             match self.parser_main_receiver.as_ref().unwrap().recv_timeout(Duration::from_millis(50)) {
                 Ok(message) => {
-                    self.bot.send(&messages[0], &message).await;
+                    self.bot.send_message(&mut Message::new(self.config.telegram_bot.chat_id, message).set_disable_web_page_preview(true)).await;
                 }
                 Err(_) => (),
             }

@@ -1,62 +1,35 @@
-use std::sync::mpsc::Sender;
-use std::thread;
+pub mod message;
 
-use futures::StreamExt;
-use telegram_bot::*;
-use tokio::runtime::Runtime;
+use std::collections::HashMap;
+use crate::tg_bot::message::Message;
 
 pub struct TgBot {
     token: String,
-    api: Api,
-    pub is_started: bool,
 }
 
 impl TgBot {
     pub fn new(token: &String) -> TgBot {
         TgBot {
             token: token.clone(),
-            api: Api::new(token),
-            is_started: false,
         }
     }
 
-    pub async fn run(&mut self, sender: Sender<Message>) {
-        let cloned_sender = sender.clone();
-        let token = self.token.clone();
-        thread::Builder::new().name("tg_bot".to_string()).spawn(move || {
-            Runtime::new().unwrap().block_on(async {
-                let thread_api = Api::new(token);
-                let mut stream = thread_api.stream();
-                loop {
-                    if let Some(result) = stream.next().await {
-                        if let Ok(update) = result {
-                            if let UpdateKind::Message(message) = update.kind {
-                                cloned_sender.send(message).unwrap_or_default();
-                            }
-                        }
-                    }
-                }
-            })
-        }).unwrap();
-    }
+    pub async fn send_message(&self, message: &mut Message) {
+        let mut map = HashMap::new();
+        let chat_id = &message.chat_id.to_string();
+        let disable_web_page_preview = &message.disable_web_page_preview.to_string();
+        let disable_notification = &message.disable_notification.to_string();
+        map.insert("text", &message.text);
+        map.insert("chat_id", chat_id);
+        map.insert("parse_mode", &message.parse_mode);
+        map.insert("disable_web_page_preview", disable_web_page_preview);
+        map.insert("disable_notification", disable_notification);
 
-    pub async fn send(&self, message: &Message, text: &String) {
-        if text.trim().len() > 0 {
-            if let Err(_err) = self.api.send(message.chat.text(format!("{}", text)).parse_mode(ParseMode::Html).disable_preview()).await {
-                println!("Error sending message to bot: {}", _err);
-            }
-        }
-    }
-
-    pub async fn send_pre(&self, message: &Message, text: &String) {
-        if text.trim().len() > 0 {
-            self.send(message, &format!("<pre>{}</pre>", text)).await;
-        }
-    }
-
-    pub async fn send_code(&self, message: &Message, text: &String) {
-        if text.trim().len() > 0 {
-            self.send(message, &format!("<code>{}</code>", text)).await;
-        }
+        let client = reqwest::Client::new();
+        let url = format!("https://api.telegram.org/bot{}/sendMessage", &self.token);
+        client.post(&url)
+            .json(&map)
+            .send()
+            .await.unwrap();
     }
 }

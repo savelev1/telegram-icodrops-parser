@@ -1,6 +1,8 @@
 {
-  "telegram_bot_token": "",
-  "telegram_user_ids": [],
+  "telegram_bot": {
+    "token": "",
+    "chat_id": 0
+  },
   "mysql": {
     "host": "127.0.0.1",
     "port": 3306,
