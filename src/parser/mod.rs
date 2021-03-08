@@ -7,6 +7,7 @@ use urlencoding::encode;
 
 use crate::parser::ico::{get_ico_text_status, ICO};
 use crate::synchronizer::config::MySQLConfig;
+use reqwest::{Response, Error};
 
 pub mod ico;
 
@@ -32,53 +33,58 @@ impl Parser {
     pub async fn parse(&mut self, url: &str, ico_status: u32, sender: &Sender<String>) {
         self.update_ico_list().await;
 
-        let raw_html = reqwest::get(url).await.unwrap().text().await.unwrap();
-        let document = Html::parse_document(&raw_html);
-        let col_selector = Selector::parse(r#"div#all"#).unwrap();
-        let ico_card_selector = Selector::parse(r#"div.ico-card"#).unwrap();
-        let ico_name_selector = Selector::parse(r#"h3>a"#).unwrap();
-        let ico_interest_selector = Selector::parse(r#".interest>div"#).unwrap();
-        let col = document.select(&col_selector).next().unwrap();
-        let text_current_status = get_ico_text_status(ico_status as usize);
+        match reqwest::get(url).await {
+            Ok(response) => {
+                let raw_html = response.text().await.unwrap();
+                let document = Html::parse_document(&raw_html);
+                let col_selector = Selector::parse(r#"div#all"#).unwrap();
+                let ico_card_selector = Selector::parse(r#"div.ico-card"#).unwrap();
+                let ico_name_selector = Selector::parse(r#"h3>a"#).unwrap();
+                let ico_interest_selector = Selector::parse(r#".interest>div"#).unwrap();
+                let col = document.select(&col_selector).next().unwrap();
+                let text_current_status = get_ico_text_status(ico_status as usize);
 
-        for ico_card in col.select(&ico_card_selector) {
-            let ico_name_option = ico_card.select(&ico_name_selector).next();
-            if ico_name_option.is_some() {
-                let raw_ico_name = ico_name_option.unwrap().inner_html();
-                let ico_name = raw_ico_name.trim();
-                let ico_link_option = ico_name_option.unwrap().value().attr("href");
-                if ico_link_option.is_some() {
-                    let ico_link = ico_link_option.unwrap().trim();
+                for ico_card in col.select(&ico_card_selector) {
+                    let ico_name_option = ico_card.select(&ico_name_selector).next();
+                    if ico_name_option.is_some() {
+                        let raw_ico_name = ico_name_option.unwrap().inner_html();
+                        let ico_name = raw_ico_name.trim();
+                        let ico_link_option = ico_name_option.unwrap().value().attr("href");
+                        if ico_link_option.is_some() {
+                            let ico_link = ico_link_option.unwrap().trim();
 
-                    let ico_interest_option = ico_card.select(&ico_interest_selector).next();
-                    if ico_interest_option.is_some() {
-                        let raw_ico_interest = ico_interest_option.unwrap().inner_html();
-                        let ico_interest = raw_ico_interest.trim();
+                            let ico_interest_option = ico_card.select(&ico_interest_selector).next();
+                            if ico_interest_option.is_some() {
+                                let raw_ico_interest = ico_interest_option.unwrap().inner_html();
+                                let ico_interest = raw_ico_interest.trim();
 
-                        let ico_option = self.get_ico(&ico_link);
-                        if ico_option.is_some() {
-                            let ico = ico_option.unwrap();
-                            let id = ico.id;
-                            let name = ico.name.clone();
-                            let interest = ico.interest.clone();
-                            let status = ico.status;
-                            if interest != ico_interest {
-                                self.update_ico_interest(id, ico_interest).await;
-                                sender.send(format!("ICO <a href=\"{}\">{}</a> changed interest to <b>{}</b> (old: {})", ico_link, name, ico_interest, interest)).unwrap();
+                                let ico_option = self.get_ico(&ico_link);
+                                if ico_option.is_some() {
+                                    let ico = ico_option.unwrap();
+                                    let id = ico.id;
+                                    let name = ico.name.clone();
+                                    let interest = ico.interest.clone();
+                                    let status = ico.status;
+                                    if interest != ico_interest {
+                                        self.update_ico_interest(id, ico_interest).await;
+                                        sender.send(format!("ICO <a href=\"{}\">{}</a> changed interest to <b>{}</b> (old: {})", ico_link, name, ico_interest, interest)).unwrap();
+                                    }
+                                    if status != ico_status {
+                                        let text_status = get_ico_text_status(status as usize);
+                                        self.update_ico_status(id, ico_status).await;
+                                        sender.send(format!("ICO <a href=\"{}\">{}</a> changed status to <b>{}</b> (old: {})", ico_link, name, text_current_status, text_status)).unwrap();
+                                    }
+                                } else {
+                                    self.insert_ico(ico_name, ico_interest, ico_status, ico_link).await;
+                                    sender.send(format!("New ICO <a href=\"{}\">{}</a>\nInterest: <b>{}</b>\nStatus: <b>{}</b>", ico_link, ico_name, ico_interest, text_current_status)).unwrap();
+                                }
                             }
-                            if status != ico_status {
-                                let text_status = get_ico_text_status(status as usize);
-                                self.update_ico_status(id, ico_status).await;
-                                sender.send(format!("ICO <a href=\"{}\">{}</a> changed status to <b>{}</b> (old: {})", ico_link, name, text_current_status, text_status)).unwrap();
-                            }
-                        } else {
-                            self.insert_ico(ico_name, ico_interest, ico_status, ico_link).await;
-                            sender.send(format!("New ICO <a href=\"{}\">{}</a>\nInterest: <b>{}</b>\nStatus: <b>{}</b>", ico_link, ico_name, ico_interest, text_current_status)).unwrap();
                         }
                     }
                 }
             }
-        }
+            Err(_) => {}
+        };
     }
 
     async fn update_ico_list(&mut self) {

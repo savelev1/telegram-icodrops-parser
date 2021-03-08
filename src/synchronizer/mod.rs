@@ -41,7 +41,7 @@ impl Synchronizer
     }
 
     pub async fn run(&mut self) {
-        self.bot.send_message(Message::new(self.config.telegram_bot.chat_id, "Bot restarted".to_owned()).set_disable_notification(true)).await;
+        self.bot.send_message(Message::new(self.config.telegram_bot.chat_id, "Bot restarted. Syncing db...".to_owned()).set_disable_notification(true)).await;
         self.start_parser();
         self.run_ticker().await;
     }
