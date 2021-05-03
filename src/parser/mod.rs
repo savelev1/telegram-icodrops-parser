@@ -41,7 +41,11 @@ impl Parser {
                 let ico_card_selector = Selector::parse(r#"div.ico-card"#).unwrap();
                 let ico_name_selector = Selector::parse(r#"h3>a"#).unwrap();
                 let ico_interest_selector = Selector::parse(r#".interest>div"#).unwrap();
-                let col = document.select(&col_selector).next().unwrap();
+                let col_option = document.select(&col_selector).next();
+                if (col_option.is_none()) {
+                    return ()
+                }
+                let col = col_option.as_ref().unwrap();
                 let text_current_status = get_ico_text_status(ico_status as usize);
 
                 for ico_card in col.select(&ico_card_selector) {
